@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Protocol: OBFUSCATION</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; user-select: none; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: rgba(255, 255, 255, 0.5); transform: translate(-50%, -50%); border-radius: 50%; }
+        #flashlight-ui { position: absolute; bottom: 20px; right: 20px; color: #fff; font-size: 24px; text-shadow: 0 0 5px #fff; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; display: flex; flex-direction: column; justify-content: center; align-items: center; pointer-events: auto; z-index: 10; transition: opacity 2s; }
+        h1 { color: #d00; font-size: 60px; text-transform: uppercase; letter-spacing: 10px; margin-bottom: 20px; text-shadow: 2px 2px 0px #333; }
+        p { color: #888; max-width: 600px; text-align: center; line-height: 1.5; }
+        button { background: #222; color: #fff; border: 1px solid #444; padding: 15px 40px; font-size: 18px; cursor: pointer; margin-top: 30px; font-family: inherit; transition: all 0.3s; }
+        button:hover { background: #d00; border-color: #f00; color: #000; }
+        #sanity-layer { position: absolute; top:0; left:0; width:100%; height:100%; opacity: 0; background: radial-gradient(circle, transparent 50%, #500 100%); mix-blend-mode: multiply; transition: opacity 0.5s;}
+        #glitch-layer { position: absolute; top:0; left:0; width:100%; height:100%; opacity: 0; background: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPjxyZWN0IHdpZHRoPSI0IiBoZWlnaHQ9IjQiIGZpbGw9IiNmZmYiLz48L3N2Zz4='); mix-blend-mode: difference; pointer-events: none;}
+        .hidden { display: none !important; }
+        #message-log { position: absolute; top: 20px; left: 20px; color: #0f0; font-size: 14px; text-shadow: 0 0 2px #0f0; opacity: 0.8; }
+    </style>
+</head>
+<body>
+
+<div id="ui-layer">
+    <div id="crosshair"></div>
+    <div id="flashlight-ui">BATTERY: 100%</div>
+    <div id="sanity-layer"></div>
+    <div id="glitch-layer"></div>
+    <div id="message-log">SYSTEM: REBOOTING...</div>
+</div>
+
+<div id="overlay">
+    <h1>Protocol: OBFUSCATION</h1>
+    <p>OBJECTIVE: Locate the Mainframe Core in the labyrinth.<br>WARNING: An anomalous entity has been detected.<br>SURVIVAL TIP: It moves when unobserved. Keep your light on, but conserve energy.</p>
+    <button id="start-btn">INITIALIZE LINK</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+
+<script>
+    // --- AUDIO SYSTEM (Web Audio API) ---
+    // We synthesize sounds to avoid external assets
+    const AudioSys = {
+        ctx: null,
+        init: function() {
+            window.AudioContext = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AudioContext();
+        },
+        playDrone: function() {
+            if(!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(50, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 10);
+            
+            // Low pass filter for "muffled" scary sound
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 200;
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.ctx.destination);
+            
+            gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+            osc.start();
+            // Endless drone loop
+            setInterval(() => {
+                if(Math.random() > 0.7) {
+                    osc.frequency.rampToValueAtTime(30 + Math.random()*20, this.ctx.currentTime + 2);
+                }
+            }, 2000);
+        },
+        playFootstep: function() {
+            if(!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.frequency.setValueAtTime(100, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.1);
+        },
+        playScream: function() {
+            if(!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(200, this.ctx.currentTime);
+            osc.frequency.linearRampToValueAtTime(800, this.ctx.currentTime + 0.1);
+            osc.frequency.linearRampToValueAtTime(100, this.ctx.currentTime + 0.5);
+            
+            gain.gain.setValueAtTime(0, this.ctx.currentTime);
+            gain.gain.linearRampToValueAtTime(1, this.ctx.currentTime + 0.05);
+            gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.8);
+            
+            // Distortion
+            const shaper = this.ctx.createWaveShaper();
+            shaper.curve = makeDistortionCurve(400);
+            
+            osc.connect(shaper);
+            shaper.connect(gain);
+            gain.connect(this.ctx.destination);
+            
+            osc.start();
+            osc.stop(this.ctx.currentTime + 1.0);
+        },
+        playHeartbeat: function() {
+            if(!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.frequency.value = 40;
+            gain.gain.setValueAtTime(1, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.1);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.15);
+        }
+    };
+
+    function makeDistortionCurve(amount) {
+        let k = typeof amount === 'number' ? amount : 50,
+            n_samples = 44100,
+            curve = new Float32Array(n_samples),
+            deg = Math.PI / 180,
+            i = 0, x;
+        for ( ; i < n_samples; ++i ) {
+            x = i * 2 / n_samples - 1;
+            curve[i] = ( 3 + k ) * x * 20 * deg / ( Math.PI + k * Math.abs(x) );
+        }
+        return curve;
+    }
+
+    // --- GAME ENGINE ---
+    
+    let camera, scene, renderer, controls;
+    let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+    let velocity = new THREE.Vector3();
+    let direction = new THREE.Vector3();
+    let prevTime = performance.now();
+    let flashlight, flashlightTarget;
+    let battery = 100;
+    let batteryDrainRate = 0.03;
+    let isGameActive = false;
+    
+    // Maze & Entity
+    let walls = [];
+    let monster;
+    let monsterSpeed = 0.12; 
+    const PLAYER_HEIGHT = 1.6;
+    let mazeSize = 20; // 20x20 grid
+    let cellSize = 5;
+    let monsterAggro = false;
+    
+    const messages = [
+        "It's cold...", 
+        "I heard something.", 
+        "Don't turn around.", 
+        "Battery low.", 
+        "It watches.",
+        "SYSTEM_FAILURE"
+    ];
+
+    init();
+    animate();
+
+    function init() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000);
+        // Heavy fog for atmosphere and hiding draw distance
+        scene.fog = new THREE.FogExp2(0x000000, 0.15);
+
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+        // Renderer
+        renderer = new THREE.WebGLRenderer({ antialias: false }); // Disable AA for gritty look
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        // Flashlight
+        flashlight = new THREE.SpotLight(0xffffff, 1, 40, Math.PI / 5, 0.5, 2);
+        flashlight.position.set(0, 0, 0);
+        flashlight.castShadow = true;
+        flashlight.shadow.mapSize.width = 512; 
+        flashlight.shadow.mapSize.height = 512; 
+        scene.add(flashlight);
+        
+        flashlightTarget = new THREE.Object3D();
+        scene.add(flashlightTarget);
+        flashlight.target = flashlightTarget;
+
+        // Ambient light (very dim)
+        const ambient = new THREE.AmbientLight(0xffffff, 0.02);
+        scene.add(ambient);
+
+        // Generate Maze
+        generateMaze();
+
+        // Create Monster (The Glitch)
+        const monsterGeo = new THREE.BoxGeometry(0.8, 2.5, 0.8); // Tall and thin
+        // Use a wireframe material mixed with standard to look "glitchy"
+        const monsterMat = new THREE.MeshBasicMaterial({ color: 0x220000, wireframe: true });
+        monster = new THREE.Mesh(monsterGeo, monsterMat);
+        
+        // Add "eyes"
+        const eyeGeo = new THREE.SphereGeometry(0.1);
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const eye1 = new THREE.Mesh(eyeGeo, eyeMat);
+        const eye2 = new THREE.Mesh(eyeGeo, eyeMat);
+        eye1.position.set(0.2, 0.8, 0.4);
+        eye2.position.set(-0.2, 0.8, 0.4);
+        monster.add(eye1);
+        monster.add(eye2);
+        
+        // Place monster far away initially
+        monster.position.set(cellSize * (mazeSize-2), 1.25, cellSize * (mazeSize-2));
+        scene.add(monster);
+
+        // Controls
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('keyup', onKeyUp);
+        document.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('resize', onWindowResize);
+
+        // Setup Start Button
+        const startBtn = document.getElementById('start-btn');
+        startBtn.addEventListener('click', startGame);
+    }
+
+    function generateMaze() {
+        // Procedural Texture for walls (Canvas API)
+        const canvas = document.createElement('canvas');
+        canvas.width = 128; canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#111'; ctx.fillRect(0,0,128,128);
+        ctx.fillStyle = '#222'; 
+        for(let i=0; i<50; i++) ctx.fillRect(Math.random()*128, Math.random()*128, 10, 10);
+        ctx.strokeStyle = '#311'; // Blood/Rust stains
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for(let i=0; i<10; i++) {
+            ctx.moveTo(Math.random()*128, Math.random()*128);
+            ctx.lineTo(Math.random()*128, Math.random()*128);
+        }
+        ctx.stroke();
+        
+        const wallTex = new THREE.CanvasTexture(canvas);
+        wallTex.magFilter = THREE.NearestFilter; // Pixelated/Retro feel
+
+        const wallGeo = new THREE.BoxGeometry(cellSize, 4, cellSize);
+        const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.8 });
+
+        // Floor
+        const floorGeo = new THREE.PlaneGeometry(mazeSize * cellSize, mazeSize * cellSize);
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 1 });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // Ceiling (to make it claustrophobic)
+        const ceil = new THREE.Mesh(floorGeo, floorMat);
+        ceil.rotation.x = Math.PI / 2;
+        ceil.position.y = 4;
+        scene.add(ceil);
+
+        // Simple Grid Maze Generation
+        // 1 = Wall, 0 = Path
+        for(let x=0; x<mazeSize; x++) {
+            for(let z=0; z<mazeSize; z++) {
+                // Ensure center is clear
+                if(x > 8 && x < 12 && z > 8 && z < 12) continue;
+                
+                // Random walls, but ensure borders are walls
+                if(x===0 || x===mazeSize-1 || z===0 || z===mazeSize-1 || Math.random() > 0.7) {
+                    const wall = new THREE.Mesh(wallGeo, wallMat);
+                    wall.position.set((x - mazeSize/2) * cellSize, 2, (z - mazeSize/2) * cellSize);
+                    wall.castShadow = true;
+                    wall.receiveShadow = true;
+                    scene.add(wall);
+                    walls.push(wall);
+                }
+            }
+        }
+    }
+
+    function startGame() {
+        AudioSys.init();
+        AudioSys.playDrone();
+        
+        document.getElementById('overlay').classList.add('hidden');
+        document.body.requestPointerLock();
+        isGameActive = true;
+        
+        // Random ambient sounds loop
+        setInterval(() => {
+            if(isGameActive && Math.random() > 0.8) AudioSys.playDistantSound();
+        }, 8000);
+        
+        // Heartbeat logic
+        setInterval(() => {
+            if(isGameActive && monsterAggro) AudioSys.playHeartbeat();
+        }, 800);
+    }
+    
+    AudioSys.playDistantSound = function() {
+        // Metallic bang
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(100, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + 0.5);
+        gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0, this.ctx.currentTime + 0.5);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.6);
+    }
+
+    // Input Handling
+    function onKeyDown(event) {
+        switch (event.code) {
+            case 'ArrowUp': case 'KeyW': moveForward = true; break;
+            case 'ArrowLeft': case 'KeyA': moveLeft = true; break;
+            case 'ArrowDown': case 'KeyS': moveBackward = true; break;
+            case 'ArrowRight': case 'KeyD': moveRight = true; break;
+        }
+    }
+    function onKeyUp(event) {
+        switch (event.code) {
+            case 'ArrowUp': case 'KeyW': moveForward = false; break;
+            case 'ArrowLeft': case 'KeyA': moveLeft = false; break;
+            case 'ArrowDown': case 'KeyS': moveBackward = false; break;
+            case 'ArrowRight': case 'KeyD': moveRight = false; break;
+        }
+    }
+    
+    let euler = new THREE.Euler(0, 0, 0, 'YXZ');
+    function onMouseMove(event) {
+        if (!isGameActive) return;
+        const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
+        const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+        
+        euler.setFromQuaternion(camera.quaternion);
+        euler.y -= movementX * 0.002;
+        euler.x -= movementY * 0.002;
+        euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, euler.x));
+        camera.quaternion.setFromEuler(euler);
+    }
+
+    function checkCollision(nextPos) {
+        // Simple AABB collision
+        const playerBox = new THREE.Box3();
+        const playerSize = 0.5;
+        playerBox.setFromCenterAndSize(nextPos, new THREE.Vector3(playerSize, 2, playerSize));
+        
+        for(let wall of walls) {
+            const wallBox = new THREE.Box3().setFromObject(wall);
+            if(playerBox.intersectsBox(wallBox)) return true;
+        }
+        return false;
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        if (!isGameActive) return;
+
+        const time = performance.now();
+        const delta = (time - prevTime) / 1000;
+
+        // --- PLAYER MOVEMENT ---
+        velocity.x -= velocity.x * 10.0 * delta;
+        velocity.z -= velocity.z * 10.0 * delta;
+
+        direction.z = Number(moveForward) - Number(moveBackward);
+        direction.x = Number(moveRight) - Number(moveLeft);
+        direction.normalize();
+
+        if (moveForward || moveBackward) velocity.z -= direction.z * 40.0 * delta;
+        if (moveLeft || moveRight) velocity.x -= direction.x * 40.0 * delta;
+
+        // Play footstep sounds
+        if((Math.abs(velocity.z) > 1 || Math.abs(velocity.x) > 1) && time % 500 < 20) {
+             AudioSys.playFootstep();
+        }
+
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        
+        // Don't fly
+        forward.y = 0; forward.normalize();
+        right.y = 0; right.normalize();
+
+        const moveVec = new THREE.Vector3();
+        moveVec.addScaledVector(forward, -velocity.z * delta);
+        moveVec.addScaledVector(right, -velocity.x * delta);
+        
+        const nextPos = camera.position.clone().add(moveVec);
+        
+        if (!checkCollision(nextPos)) {
+            camera.position.add(moveVec);
+        }
+
+        // --- FLASHLIGHT MECHANICS ---
+        flashlight.position.copy(camera.position);
+        flashlightTarget.position.copy(camera.position).add(camera.getWorldDirection(new THREE.Vector3()));
